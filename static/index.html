@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Pro Web - PostgreSQL GUI</title>
+    <!-- Google Fonts: Inter for UI, Fira Code for SQL Editor -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for beautiful icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Load Mermaid.js for drawing ER diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <!-- Load Chart.js for visualization charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Connection Header Bar -->
+        <header class="connection-header">
+            <div class="logo">
+                <i class="fa-solid fa-database logo-icon"></i>
+                <span class="logo-text">SQL Pro <span class="logo-accent">Web</span></span>
+            </div>
+            
+            <form id="connection-form" class="connection-form">
+                <div class="form-group">
+                    <label for="host">Host</label>
+                    <input type="text" id="host" value="localhost" placeholder="localhost" required>
+                </div>
+                <div class="form-group">
+                    <label for="port">Port</label>
+                    <input type="number" id="port" value="5433" placeholder="5432" required>
+                </div>
+                <div class="form-group">
+                    <label for="user">User</label>
+                    <input type="text" id="user" value="postgres" placeholder="postgres" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label for="database">Database</label>
+                    <input type="text" id="database" value="postgres" placeholder="postgres">
+                </div>
+                <button type="submit" id="btn-connect" class="btn btn-connect">
+                    <i class="fa-solid fa-plug"></i> Connect
+                </button>
+            </form>
+
+            <div class="connection-status-badge">
+                <span id="status-dot" class="status-dot disconnected"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <!-- Main Workspace Area -->
+        <main class="main-workspace">
+            <!-- Sidebar: DB & Tables browser -->
+            <aside class="sidebar">
+                <!-- Sidebar tabs switcher -->
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab-btn active" data-side-tab="explorer"><i class="fa-solid fa-compass"></i> Explorer</button>
+                    <button class="sidebar-tab-btn" data-side-tab="history"><i class="fa-solid fa-history"></i> History</button>
+                </div>
+
+                <!-- Explorer Tab Content -->
+                <div id="side-content-explorer" class="side-tab-content active">
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-title"><i class="fa-solid fa-server"></i> Databases</h3>
+                        <div class="select-wrapper">
+                            <select id="db-select" disabled>
+                                <option value="">(Select Database)</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down select-arrow"></i>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section tables-section">
+                        <div class="tables-section-header">
+                            <h3 class="sidebar-title"><i class="fa-solid fa-table-list"></i> Tables</h3>
+                            <div class="tables-actions">
+                                <span id="tables-count-badge" class="tables-count-badge" title="Total tables in this database" style="display:none;"></span>
+                                <button id="btn-create-table-modal" class="btn-sidebar-action" title="Create Table Visually" disabled>
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                                <button id="btn-refresh-tables" class="btn-refresh" title="Refresh Tables" disabled>
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="tables-list-container">
+                            <ul id="tables-list" class="tables-list">
+                                <!-- Populated dynamically -->
+                                <li class="empty-list-msg">Connect to see tables</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Tab Content -->
+                <div id="side-content-history" class="side-tab-content">
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-title"><i class="fa-solid fa-star"></i> Bookmarked Queries</h3>
+                        <div class="sidebar-item-list-container">
+                            <ul id="saved-queries-list" class="sidebar-item-list">
+                                <li class="empty-list-msg">No bookmarked queries</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="sidebar-section history-section">
+                        <h3 class="sidebar-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent Queries</h3>
+                        <div class="sidebar-item-list-container history-list-container">
+                            <ul id="history-list" class="sidebar-item-list">
+                                <li class="empty-list-msg">No queries run yet</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Editor & Results View -->
+            <section class="content-area">
+                <!-- Query Editor Card -->
+                <div class="card editor-card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fa-solid fa-code"></i> SQL Query Editor</span>
+                        <div class="editor-actions">
+                            <button id="btn-bookmark" class="btn btn-secondary" title="Bookmark Query" disabled>
+                                <i class="fa-regular fa-star"></i> Bookmark
+                            </button>
+                            <button id="btn-clear" class="btn btn-secondary">
+                                <i class="fa-solid fa-trash-can"></i> Clear
+                            </button>
+                            <button id="btn-run" class="btn btn-primary" disabled>
+                                <i class="fa-solid fa-play"></i> Run Query <span class="kbd-shortcut">Ctrl+Enter</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="editor-container">
+                        <!-- Line numbers column -->
+                        <div class="line-numbers" id="editor-line-numbers"><span>1</span></div>
+                        <textarea id="query-editor" placeholder="-- Write your SQL query here&#10;-- Example: SELECT * FROM person;&#10;-- Press Ctrl+Enter to execute" disabled></textarea>
+                    </div>
+                </div>
+
+                <!-- Results Grid Card -->
+                <div class="card results-card">
+                    <div class="card-header card-header-tabs">
+                        <div class="tab-container">
+                            <button class="tab-btn active" data-tab="grid"><i class="fa-solid fa-table-cells"></i> Grid View</button>
+                            <button class="tab-btn" id="tab-btn-er" data-tab="er" disabled><i class="fa-solid fa-diagram-project"></i> ER Diagram</button>
+                            <button class="tab-btn" id="tab-btn-chart" data-tab="chart" disabled><i class="fa-solid fa-chart-line"></i> Chart View</button>
+                        </div>
+                        
+                        <div class="results-header-actions">
+                            <div id="query-meta" class="query-meta">
+                                <!-- Display speed / count dynamically -->
+                            </div>
+                            
+                            <!-- Export Dropdown -->
+                            <div class="dropdown" id="export-dropdown" style="display: none;">
+                                <button class="btn btn-secondary btn-sm dropdown-toggle" id="btn-export-toggle">
+                                    <i class="fa-solid fa-file-export"></i> Export
+                                </button>
+                                <div class="dropdown-menu" id="export-menu">
+                                    <button class="dropdown-item" id="export-csv"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
+                                    <button class="dropdown-item" id="export-json"><i class="fa-solid fa-file-code"></i> Export as JSON</button>
+                                    <button class="dropdown-item" id="export-sql"><i class="fa-solid fa-file-lines"></i> Export as SQL Inserts</button>
+                                </div>
+                            </div>
+                            
+                            <!-- Add Row Button -->
+                            <button id="btn-insert-row" class="btn btn-primary btn-sm" style="display: none;">
+                                <i class="fa-solid fa-circle-plus"></i> Insert Row
+                            </button>
+                        </div>
+                    </div>
+                    <div id="results-container" class="results-container">
+                        <!-- Grid View Tab Content -->
+                        <div id="tab-content-grid" class="tab-content active">
+                            <div class="results-placeholder">
+                                <i class="fa-solid fa-terminal placeholder-icon"></i>
+                                <p>Execute a query or click a table in the sidebar to see results here</p>
+                            </div>
+                        </div>
+
+                        <!-- ER Diagram Tab Content -->
+                        <div id="tab-content-er" class="tab-content">
+                            <div id="er-canvas-container" class="er-canvas-container">
+                                <div id="er-canvas" class="mermaid">
+                                    <!-- Mermaid diagram will render here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chart View Tab Content -->
+                        <div id="tab-content-chart" class="tab-content">
+                            <div class="chart-workspace">
+                                <div class="chart-controls">
+                                    <div class="control-group">
+                                        <label for="chart-type">Chart Type</label>
+                                        <select id="chart-type">
+                                            <option value="bar">Bar Chart</option>
+                                            <option value="line">Line Chart</option>
+                                            <option value="pie">Pie Chart</option>
+                                        </select>
+                                    </div>
+                                    <div class="control-group">
+                                        <label for="chart-x-axis">Labels Column (X-Axis)</label>
+                                        <select id="chart-x-axis"></select>
+                                    </div>
+                                    <div class="control-group">
+                                        <label for="chart-y-axis">Values Column (Y-Axis)</label>
+                                        <select id="chart-y-axis"></select>
+                                    </div>
+                                </div>
+                                <div class="chart-canvas-wrapper">
+                                    <canvas id="chart-canvas"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- CREATE TABLE VISUALLY MODAL -->
+    <div id="modal-create-table" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-table-columns"></i> Create Table Visually</h3>
+                <button class="btn-close-modal" id="btn-close-create-table">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group mb-15">
+                    <label for="create-table-name">Table Name</label>
+                    <input type="text" id="create-table-name" placeholder="e.g. products" required>
+                </div>
+                
+                <div class="columns-builder-section">
+                    <div class="builder-header">
+                        <h4>Columns Configuration</h4>
+                        <button type="button" id="btn-add-builder-column" class="btn btn-secondary btn-sm">
+                            <i class="fa-solid fa-plus"></i> Add Column
+                        </button>
+                    </div>
+                    
+                    <div class="columns-builder-header-row">
+                        <span class="col-name-h">Col Name</span>
+                        <span class="col-type-h">Type</span>
+                        <span class="col-check-h">PK</span>
+                        <span class="col-check-h">NN</span>
+                        <span class="col-check-h">UQ</span>
+                        <span class="col-action-h"></span>
+                    </div>
+                    
+                    <div class="columns-builder-rows" id="builder-rows-container">
+                        <!-- Column builder rows added dynamically -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-create-table">Cancel</button>
+                <button id="btn-submit-create-table" class="btn btn-primary">Create Table</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- INSERT ROW MODAL -->
+    <div id="modal-insert-row" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-circle-plus"></i> Insert Row into <span id="insert-row-table-title" class="logo-accent"></span></h3>
+                <button class="btn-close-modal" id="btn-close-insert-row">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="insert-row-form" class="modal-form-grid">
+                    <!-- Dynamic column inputs go here -->
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-insert-row">Cancel</button>
+                <button id="btn-submit-insert-row" class="btn btn-primary">Insert Record</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification system -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
