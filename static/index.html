@@ -204,6 +204,17 @@
 
                         <!-- ER Diagram Tab Content -->
                         <div id="tab-content-er" class="tab-content">
+                            <!-- ER Filter Bar -->
+                            <div id="er-filter-bar" style="display:none; align-items:center; gap:10px; padding:8px 14px; background:var(--bg-card); border-bottom:1px solid var(--border-color);">
+                                <i class="fa-solid fa-filter" style="color:var(--accent-blue);"></i>
+                                <input type="text" id="er-table-search" placeholder="Filter tables by name... (showing up to 25)" style="flex:1; background:var(--bg-body); border:1px solid var(--border-color); border-radius:6px; padding:5px 10px; color:var(--text-primary); font-size:13px;">
+                                <button id="btn-er-filter-apply" class="btn btn-secondary" style="padding:5px 12px; font-size:13px;">
+                                    <i class="fa-solid fa-magnifying-glass"></i> Show
+                                </button>
+                                <button id="btn-er-show-all" class="btn btn-secondary" style="padding:5px 12px; font-size:13px;">
+                                    <i class="fa-solid fa-rotate-left"></i> Reset
+                                </button>
+                            </div>
                             <div id="er-canvas-container" class="er-canvas-container">
                                 <div id="er-canvas" class="mermaid">
                                     <!-- Mermaid diagram will render here -->

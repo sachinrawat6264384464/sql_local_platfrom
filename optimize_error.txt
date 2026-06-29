@@ -1,0 +1,57 @@
+Traceback (most recent call last):
+  File "D:\sql_pro\app.py", line 588, in ai_optimize
+    result = rag_engine.optimize_query(sql_query, active_db=active_db, table_schemas=schema_text)
+  File "D:\sql_pro\rag_engine.py", line 496, in optimize_query
+    raise e
+  File "D:\sql_pro\rag_engine.py", line 475, in optimize_query
+    response = model.generate_content(prompt)
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\generativeai\generative_models.py", line 331, in generate_content
+    response = self._client.generate_content(
+        request,
+        **request_options,
+    )
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\ai\generativelanguage_v1beta\services\generative_service\client.py", line 835, in generate_content
+    response = rpc(
+        request,
+    ...<2 lines>...
+        metadata=metadata,
+    )
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\gapic_v1\method.py", line 131, in __call__
+    return wrapped_func(*args, **kwargs)
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\retry\retry_unary.py", line 294, in retry_wrapped_func
+    return retry_target(
+        target,
+    ...<3 lines>...
+        on_error=on_error,
+    )
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\retry\retry_unary.py", line 156, in retry_target
+    next_sleep = _retry_error_helper(
+        exc,
+    ...<6 lines>...
+        timeout,
+    )
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\retry\retry_base.py", line 214, in _retry_error_helper
+    raise final_exc from source_exc
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\retry\retry_unary.py", line 147, in retry_target
+    result = target()
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\timeout.py", line 130, in func_with_timeout
+    return func(*args, **kwargs)
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\api_core\grpc_helpers.py", line 77, in error_remapped_callable
+    raise exceptions.from_grpc_error(exc) from exc
+google.api_core.exceptions.PermissionDenied: 403 Permission denied: Consumer 'api_key:AIzaSyBMjxBfPOhCixZQhRas17BmlIZQ2dUqNNQ' has been suspended. [reason: "CONSUMER_SUSPENDED"
+domain: "googleapis.com"
+metadata {
+  key: "service"
+  value: "generativelanguage.googleapis.com"
+}
+metadata {
+  key: "containerInfo"
+  value: "api_key:AIzaSyBMjxBfPOhCixZQhRas17BmlIZQ2dUqNNQ"
+}
+metadata {
+  key: "consumer"
+  value: "projects/948888683762"
+}
+, locale: "en-US"
+message: "Permission denied: Consumer \'api_key:AIzaSyBMjxBfPOhCixZQhRas17BmlIZQ2dUqNNQ\' has been suspended."
+]

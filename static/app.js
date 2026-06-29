@@ -50,6 +50,7 @@ const API_BASE = '';
 document.addEventListener('DOMContentLoaded', () => {
     checkConnectionStatus();
     setupEventListeners();
+    setupERFilterListeners();
     loadHistory();
     loadBookmarks();
     updateLineNumbers(); // Initialize lines display
@@ -1016,8 +1017,12 @@ async function handleExecuteQuery() {
 }
 
 // Fetch relationships and compile/render Mermaid ER Diagram
-async function loadAndRenderERDiagram() {
+const ER_TABLE_LIMIT = 25; // Mermaid crashes above ~30 tables
+
+async function loadAndRenderERDiagram(filterQuery = '') {
     const erCanvas = document.getElementById('er-canvas');
+    const erFilterBar = document.getElementById('er-filter-bar');
+
     erCanvas.innerHTML = `
         <div class="results-placeholder">
             <i class="fa-solid fa-spinner fa-spin placeholder-icon"></i>
@@ -1041,10 +1046,11 @@ async function loadAndRenderERDiagram() {
             return;
         }
 
-        const tables = data.tables || {};
-        const relationships = data.relationships || [];
+        const allTables = data.tables || {};
+        const allRelationships = data.relationships || [];
+        const totalTableCount = Object.keys(allTables).length;
 
-        if (Object.keys(tables).length === 0) {
+        if (totalTableCount === 0) {
             erCanvas.innerHTML = `
                 <div class="results-placeholder">
                     <i class="fa-solid fa-circle-info placeholder-icon" style="opacity:0.3;"></i>
@@ -1052,57 +1058,105 @@ async function loadAndRenderERDiagram() {
                 </div>
             `;
             queryMeta.textContent = 'Empty Database';
+            if (erFilterBar) erFilterBar.style.display = 'none';
             return;
         }
 
+        // Show filter bar if too many tables
+        if (totalTableCount > ER_TABLE_LIMIT && erFilterBar) {
+            erFilterBar.style.display = 'flex';
+        } else if (erFilterBar) {
+            erFilterBar.style.display = 'none';
+        }
+
+        // Apply filter/limit
+        let filteredEntries = Object.entries(allTables);
+        if (filterQuery.trim()) {
+            const q = filterQuery.trim().toLowerCase();
+            filteredEntries = filteredEntries.filter(([name]) => name.toLowerCase().includes(q));
+        }
+
+        // Cap to limit
+        const isTruncated = filteredEntries.length > ER_TABLE_LIMIT;
+        if (isTruncated) filteredEntries = filteredEntries.slice(0, ER_TABLE_LIMIT);
+
+        const tables = Object.fromEntries(filteredEntries);
+        const visibleTableNames = new Set(Object.keys(tables));
+
+        // Only include relationships between visible tables
+        const relationships = allRelationships.filter(
+            rel => visibleTableNames.has(rel.source_table) && visibleTableNames.has(rel.target_table)
+        );
+
+        // Build Mermaid code
         let mermaidCode = 'erDiagram\n';
 
         for (const [tableName, columns] of Object.entries(tables)) {
-            mermaidCode += `    ${tableName} {\n`;
+            // Sanitize table name for mermaid (no special chars)
+            const safeName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+            mermaidCode += `    ${safeName} {\n`;
             columns.forEach(col => {
                 let sanitizedType = col.type
                     .replace(/\s+/g, '-')
                     .replace(/[^a-zA-Z0-9-]/g, '');
-                
+                const safeCName = col.name.replace(/[^a-zA-Z0-9_]/g, '_');
                 let keyLabel = '';
                 const lowerColName = col.name.toLowerCase();
                 if (lowerColName.includes('id') && lowerColName.includes(tableName.toLowerCase().replace(/s$/, ''))) {
                     keyLabel = 'PK';
                 }
-                
-                mermaidCode += `        ${sanitizedType} ${col.name} ${keyLabel}\n`;
+                mermaidCode += `        ${sanitizedType} ${safeCName} ${keyLabel}\n`;
             });
             mermaidCode += `    }\n`;
         }
 
         const drawnRelations = new Set();
         relationships.forEach(rel => {
-            const relKey = `${rel.target_table}-${rel.source_table}`;
+            const safeSource = rel.source_table.replace(/[^a-zA-Z0-9_]/g, '_');
+            const safeTarget = rel.target_table.replace(/[^a-zA-Z0-9_]/g, '_');
+            const relKey = `${safeTarget}-${safeSource}`;
             if (!drawnRelations.has(relKey)) {
-                mermaidCode += `    ${rel.target_table} ||--o{ ${rel.source_table} : "has"\n`;
+                mermaidCode += `    ${safeTarget} ||--o{ ${safeSource} : "has"\n`;
                 drawnRelations.add(relKey);
             }
         });
 
-        queryMeta.textContent = `ER Diagram | Tables: ${Object.keys(tables).length} | Relations: ${relationships.length}`;
+        const shownCount = Object.keys(tables).length;
+        const truncMsg = isTruncated ? ` (showing first ${ER_TABLE_LIMIT} of ${totalTableCount})` : '';
+        queryMeta.textContent = `ER Diagram | Tables: ${shownCount}${truncMsg} | Relations: ${relationships.length}`;
         
         // Save tables and relationships in state so they are accessible by highlighting logic
         state.erTables = tables;
         state.erRelationships = relationships;
         state.activeErTable = null;
 
+        // Show truncation warning in canvas if needed
+        let warningHtml = '';
+        if (isTruncated) {
+            warningHtml = `
+                <div style="position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:10;
+                    background: rgba(255, 180, 0, 0.15); border:1px solid rgba(255, 180, 0, 0.4);
+                    border-radius:8px; padding:6px 14px; font-size:12px; color:#fcc419; white-space:nowrap;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    Too many tables to display all at once. Use the filter bar above to search specific tables.
+                </div>`;
+        }
+
         mermaid.initialize({
             startOnLoad: false,
             theme: 'dark',
             securityLevel: 'loose',
-            er: {
-                useMaxWidth: true
-            }
+            er: { useMaxWidth: true },
+            maxTextSize: 99999
         });
 
         erCanvas.removeAttribute('data-processed');
         const { svg } = await mermaid.render('er-diagram-svg-render', mermaidCode);
-        erCanvas.innerHTML = svg;
+
+        // Wrap with warning if needed
+        const container = document.getElementById('er-canvas-container');
+        container.style.position = 'relative';
+        erCanvas.innerHTML = (isTruncated ? warningHtml : '') + svg;
 
         // Hook up Zoom and Pan helper after rendering
         const svgEl = erCanvas.querySelector('svg');
@@ -1117,9 +1171,36 @@ async function loadAndRenderERDiagram() {
             <div class="error-box" style="margin: 0;">
                 <div class="error-title"><i class="fa-solid fa-triangle-exclamation"></i> ER Diagram Rendering Error</div>
                 <p>Could not build visual map. Detail: ${err.message || err}</p>
+                <p style="margin-top:8px; font-size:12px; color:var(--text-secondary);">
+                    Tip: Use the <strong>filter bar</strong> above to search for specific tables if your database has many tables.
+                </p>
             </div>
         `;
         queryMeta.textContent = 'Diagram Error';
+    }
+}
+
+// Wire ER filter buttons (called once on DOMContentLoaded)
+function setupERFilterListeners() {
+    const applyBtn = document.getElementById('btn-er-filter-apply');
+    const resetBtn = document.getElementById('btn-er-show-all');
+    const searchInput = document.getElementById('er-table-search');
+
+    if (applyBtn) {
+        applyBtn.addEventListener('click', () => {
+            loadAndRenderERDiagram(searchInput.value);
+        });
+    }
+    if (searchInput) {
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loadAndRenderERDiagram(searchInput.value);
+        });
+    }
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            loadAndRenderERDiagram('');
+        });
     }
 }
 
