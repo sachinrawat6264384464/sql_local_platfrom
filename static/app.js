@@ -151,6 +151,43 @@ function setupEventListeners() {
     document.getElementById('chart-type').addEventListener('change', renderChartVisualization);
     document.getElementById('chart-x-axis').addEventListener('change', renderChartVisualization);
     document.getElementById('chart-y-axis').addEventListener('change', renderChartVisualization);
+
+    // Chatbot Handlers
+    const chatForm = document.getElementById('chat-input-form');
+    if (chatForm) chatForm.addEventListener('submit', handleChatSubmit);
+    
+    const configBtn = document.getElementById('btn-chat-config');
+    if (configBtn) configBtn.addEventListener('click', () => {
+        const pane = document.getElementById('chat-settings-pane');
+        pane.style.display = pane.style.display === 'none' ? 'block' : 'none';
+    });
+
+    const saveKeyBtn = document.getElementById('btn-save-api-key');
+    if (saveKeyBtn) saveKeyBtn.addEventListener('click', handleSaveAPIKey);
+
+    // Floating toggle button & close button
+    const widgetToggle = document.getElementById('chat-widget-toggle');
+    const widgetWindow = document.getElementById('chat-widget-window');
+    const widgetClose = document.getElementById('btn-chat-close');
+
+    if (widgetToggle && widgetWindow) {
+        widgetToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            widgetWindow.classList.toggle('active');
+            if (widgetWindow.classList.contains('active')) {
+                // Scroll message container to bottom on open
+                const container = document.getElementById('chat-messages');
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+        });
+    }
+
+    if (widgetClose && widgetWindow) {
+        widgetClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            widgetWindow.classList.remove('active');
+        });
+    }
 }
 
 // Update Line Numbers dynamically
@@ -283,6 +320,13 @@ function setUIState(connected) {
         tabBtnEr.disabled = false;
         btnBookmark.disabled = false;
         btnCreateTableModal.disabled = false;
+        
+        // Chatbot Controls
+        const widgetToggle = document.getElementById('chat-widget-toggle');
+        if (widgetToggle) widgetToggle.disabled = false;
+        document.getElementById('chat-input').disabled = false;
+        document.getElementById('btn-chat-send').disabled = false;
+        startRAGStatusPolling();
     } else {
         statusDot.className = 'status-dot disconnected';
         statusText.textContent = 'Disconnected';
@@ -303,6 +347,15 @@ function setUIState(connected) {
         tabBtnChart.disabled = true;
         btnBookmark.disabled = true;
         btnCreateTableModal.disabled = true;
+        
+        // Chatbot Controls
+        const widgetToggle = document.getElementById('chat-widget-toggle');
+        if (widgetToggle) widgetToggle.disabled = true;
+        document.getElementById('chat-input').disabled = true;
+        document.getElementById('btn-chat-send').disabled = true;
+        const widgetWindow = document.getElementById('chat-widget-window');
+        if (widgetWindow) widgetWindow.classList.remove('active');
+        stopRAGStatusPolling();
         
         // Hide tables elements
         btnInsertRow.style.display = 'none';
@@ -444,6 +497,12 @@ async function handleDatabaseSwitch() {
         });
         const data = await res.json();
 
+        if (res.status === 401) {
+            showToast('Connection lost. Please reconnect using the connect panel.', 'error');
+            setUIState(false);
+            return;
+        }
+
         if (res.ok) {
             state.database = data.database;
             statusText.textContent = `Connected (${state.database})`;
@@ -474,6 +533,12 @@ async function loadTables() {
     try {
         const res = await fetch(`${API_BASE}/api/tables`);
         const data = await res.json();
+
+        if (res.status === 401) {
+            tablesList.innerHTML = '<li class="empty-list-msg">Connection lost. Reconnect.</li>';
+            setUIState(false);
+            return;
+        }
 
         if (res.ok) {
             state.tables = data.tables;
@@ -1759,4 +1824,217 @@ function openModal(modalId) {
 // Close Modal window helper
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
+}
+
+/* ==========================================
+   FEATURE 6: AI CHATBOT & RAG ENGINE
+   ========================================== */
+let ragPollingInterval = null;
+
+function startRAGStatusPolling() {
+    if (ragPollingInterval) clearInterval(ragPollingInterval);
+    
+    // Immediate check
+    checkRAGStatus();
+    
+    // Poll every 10 seconds
+    ragPollingInterval = setInterval(checkRAGStatus, 10000);
+}
+
+function stopRAGStatusPolling() {
+    if (ragPollingInterval) {
+        clearInterval(ragPollingInterval);
+        ragPollingInterval = null;
+    }
+    updateRAGStatusUI('idle', 'Not Connected', false);
+}
+
+async function checkRAGStatus() {
+    if (!state.connected) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/rag/status`);
+        const data = await res.json();
+        
+        if (res.ok) {
+            let statusText = 'Not Synced';
+            let isConfigured = data.api_configured;
+            
+            if (data.status === 'indexing') {
+                statusText = 'Indexing database...';
+            } else if (data.status === 'synced') {
+                statusText = 'Database Synced';
+            } else if (data.status === 'failed') {
+                statusText = 'Sync Failed';
+            }
+            
+            updateRAGStatusUI(data.status, statusText, isConfigured);
+        }
+    } catch (err) {
+        console.error('Error fetching RAG status:', err);
+    }
+}
+
+function updateRAGStatusUI(status, text, isConfigured) {
+    const dot = document.getElementById('rag-status-dot');
+    const textEl = document.getElementById('rag-status-text');
+    
+    if (!dot || !textEl) return;
+    
+    textEl.textContent = `${text} ${isConfigured ? '' : '(No API Key)'}`;
+    
+    dot.className = 'status-dot';
+    if (status === 'indexing') {
+        dot.classList.add('connected');
+    } else if (status === 'synced') {
+        dot.classList.add('connected');
+    } else if (status === 'failed') {
+        dot.classList.add('disconnected');
+    } else {
+        dot.classList.add('disconnected');
+    }
+}
+
+async function handleSaveAPIKey() {
+    const keyInput = document.getElementById('chat-api-key');
+    const key = keyInput.value.trim();
+    if (!key) {
+        showToast('Please enter an API key', 'error');
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/rag/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: key })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            showToast('API Key saved successfully!', 'success');
+            keyInput.value = '';
+            document.getElementById('chat-settings-pane').style.display = 'none';
+            checkRAGStatus();
+        } else {
+            showToast(data.error || 'Failed to save key', 'error');
+        }
+    } catch (err) {
+        showToast('Network error saving API Key', 'error');
+    }
+}
+
+async function handleChatSubmit(e) {
+    e.preventDefault();
+    
+    const inputEl = document.getElementById('chat-input');
+    const message = inputEl.value.trim();
+    if (!message) return;
+    
+    inputEl.value = '';
+    
+    // Render user message bubble
+    renderChatMessage(message, 'user');
+    
+    // Append typing indicator loader
+    appendTypingIndicator();
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message })
+        });
+        const data = await res.json();
+        
+        removeTypingIndicator();
+        
+        if (res.ok) {
+            renderChatMessage(data.response, 'bot');
+        } else {
+            renderChatMessage(`Error: ${data.error || 'Failed to get answer'}`, 'bot');
+        }
+    } catch (err) {
+        removeTypingIndicator();
+        renderChatMessage('Network error: Could not reach backend server.', 'bot');
+    }
+}
+
+function renderChatMessage(text, sender) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `chat-message ${sender}`;
+    
+    const avatarIcon = sender === 'user' ? 'fa-user' : 'fa-robot';
+    
+    // Basic Markdown formatting helper (converts backticks code block, bold text, etc.)
+    const formattedText = formatMarkdown(text);
+    
+    msgDiv.innerHTML = `
+        <div class="message-avatar"><i class="fa-solid ${avatarIcon}"></i></div>
+        <div class="message-content">${formattedText}</div>
+    `;
+    
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
+
+function appendTypingIndicator() {
+    const container = document.getElementById('chat-messages');
+    if (!container || document.getElementById('typing-loader-wrapper')) return;
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-message bot';
+    wrapper.id = 'typing-loader-wrapper';
+    
+    wrapper.innerHTML = `
+        <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+        <div class="message-content">
+            <div class="typing-loader">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+    `;
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    const el = document.getElementById('typing-loader-wrapper');
+    if (el) el.remove();
+}
+
+function formatMarkdown(text) {
+    if (!text) return '';
+    
+    let html = text
+        // Escape HTML
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        // Preformatted code blocks
+        .replace(/```([\s\S]*?)```/g, (match, p1) => {
+            return `<pre><code>${p1.trim()}</code></pre>`;
+        })
+        // Inline code
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        // Bold
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        // Italics
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        // Unordered lists
+        .replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>')
+        // Wrap contiguous list items in ul
+        .replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>')
+        .replace(/<\/ul>\s*<ul>/g, '') // Merge lists
+        // Paragraphs (split by double newlines)
+        .split(/\n\n+/).map(p => {
+            if (p.startsWith('<ul>') || p.startsWith('<pre>')) return p;
+            return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+        }).join('');
+        
+    return html;
 }

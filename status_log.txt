@@ -1,0 +1,6 @@
+Active DB: my_database
+RAG Status: synced
+RAG Error: 
+API Configured: True
+Chroma Count: 3
+Chroma Sample Metadatas: [{'type': 'schema', 'table_name': 'course'}, {'type': 'schema', 'table_name': 'employment'}, {'type': 'schema', 'table_name': 'person'}]

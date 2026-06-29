@@ -1,14 +1,23 @@
 import os
 import sys
 import time
+import threading
 
 # Add local libs folder to sys.path so we load packages installed with -t (if any)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'libs'))
+
+# Load dotenv to get GEMINI_API_KEY
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import psycopg2
 from psycopg2 import extras
+from rag_engine import rag_engine
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 static_folder = os.path.join(base_dir, 'static')
@@ -76,6 +85,12 @@ def connect():
         active_conn = conn
         active_config = config
 
+        # Trigger background RAG database indexing
+        try:
+            threading.Thread(target=rag_engine.ingest_database, args=(conn,), daemon=True).start()
+        except Exception as thread_err:
+            print("Error starting ingestion thread:", thread_err)
+
         return jsonify({
             'message': 'Successfully connected to PostgreSQL!',
             'database': database
@@ -116,6 +131,12 @@ def switch_database():
 
         active_conn = conn
         active_config = new_config
+
+        # Trigger background RAG database indexing
+        try:
+            threading.Thread(target=rag_engine.ingest_database, args=(conn,), daemon=True).start()
+        except Exception as thread_err:
+            print("Error starting switch ingestion thread:", thread_err)
 
         return jsonify({
             'message': f'Successfully switched to database "{database}"',
@@ -274,6 +295,14 @@ def execute_query():
                 'fields': fields
             }
 
+        # Check if mutation query, if so re-index database
+        sql_upper = sql.upper().strip()
+        if any(keyword in sql_upper for keyword in ["INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER"]):
+            try:
+                threading.Thread(target=rag_engine.ingest_database, args=(active_conn,), daemon=True).start()
+            except Exception as thread_err:
+                print("Error starting query-triggered re-indexing thread:", thread_err)
+
         return jsonify({
             'success': True,
             'results': [result_obj],
@@ -346,6 +375,67 @@ def get_relationships():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# POST: AI Chat endpoint using RAG
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    global active_conn, active_config
+    data = request.json or {}
+    message = data.get('message')
+    api_key = data.get('api_key') # Option to receive API key from front-end
+
+    if not message or message.strip() == '':
+        return jsonify({'error': 'Message cannot be empty.'}), 400
+
+    # If key was sent from client, dynamically set it
+    if api_key:
+        rag_engine.update_api_key(api_key)
+
+    active_db = active_config.get('database', 'postgres') if active_config else 'postgres'
+    
+    # Query database list dynamically from the active connection
+    all_dbs = []
+    if active_conn:
+        try:
+            # If the current transaction is aborted, rollback first to keep it clean
+            try:
+                active_conn.rollback()
+            except:
+                pass
+            with active_conn.cursor() as cursor:
+                cursor.execute("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname;")
+                all_dbs = [row[0] for row in cursor.fetchall()]
+        except Exception as query_err:
+            print(f"Error querying database list: {query_err}")
+    
+
+    # Generate RAG response
+    response_text = rag_engine.get_chat_response(message, active_db_name=active_db, all_databases=all_dbs)
+    return jsonify({'response': response_text})
+
+# GET: Check RAG Indexing status
+@app.route('/api/rag/status', methods=['GET'])
+def get_rag_status():
+    import rag_engine as re_module
+    return jsonify({
+        'status': re_module.indexing_status,
+        'error': re_module.indexing_error,
+        'api_configured': rag_engine.api_configured
+    })
+
+# POST: Save/update Gemini API Key in backend session
+@app.route('/api/rag/config', methods=['POST'])
+def save_rag_config():
+    data = request.json or {}
+    api_key = data.get('api_key')
+    if not api_key:
+        return jsonify({'error': 'API key is required.'}), 400
+    
+    success = rag_engine.update_api_key(api_key)
+    if success:
+        return jsonify({'success': True, 'message': 'API Key successfully configured.'})
+    else:
+        return jsonify({'error': 'Failed to configure API key.'}), 400
 
 if __name__ == '__main__':
     # Ensure static directory exists

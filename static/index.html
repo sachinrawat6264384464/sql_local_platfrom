@@ -224,7 +224,8 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+
+                        </div>
                 </div>
             </section>
         </main>
@@ -288,6 +289,64 @@
                 <button class="btn btn-secondary" id="btn-cancel-insert-row">Cancel</button>
                 <button id="btn-submit-insert-row" class="btn btn-primary">Insert Record</button>
             </div>
+        </div>
+    </div>
+
+    <!-- FLOATING CHATBOT WIDGET -->
+    <div class="floating-chat-container">
+        <!-- Chat Widget Toggle Button -->
+        <button id="chat-widget-toggle" class="chat-widget-toggle" title="Chat with AI Assistant" disabled>
+            <i class="fa-solid fa-comments"></i>
+        </button>
+        
+        <!-- Chat Widget Window -->
+        <div id="chat-widget-window" class="chat-widget-window">
+            <div class="chat-header-bar">
+                <div class="chat-header-title">
+                    <i class="fa-solid fa-robot"></i>
+                    <span>AI Database Assistant</span>
+                </div>
+                <div class="chat-header-actions">
+                    <span id="rag-status-dot" class="status-dot disconnected"></span>
+                    <span id="rag-status-text" class="status-text-micro">Not Connected</span>
+                    <button id="btn-chat-config" class="btn-chat-action" title="Gemini Settings"><i class="fa-solid fa-gear"></i></button>
+                    <button id="btn-chat-close" class="btn-chat-action" title="Close Chat"><i class="fa-solid fa-times"></i></button>
+                </div>
+            </div>
+            
+            <!-- Chat Settings Pane -->
+            <div class="chat-settings-pane" id="chat-settings-pane" style="display: none;">
+                <div class="form-group-settings">
+                    <label for="chat-api-key" class="settings-label">Gemini API Key</label>
+                    <div class="input-with-button">
+                        <input type="password" id="chat-api-key" placeholder="Paste GEMINI_API_KEY here...">
+                        <button id="btn-save-api-key" class="btn btn-primary btn-sm">Save</button>
+                    </div>
+                    <small class="help-text">Required to generate embeddings and run chatbot queries. Saved in active session.</small>
+                </div>
+            </div>
+
+            <div class="chat-messages-container" id="chat-messages">
+                <div class="chat-message bot">
+                    <div class="message-avatar"><i class="fa-robot fa-solid"></i></div>
+                    <div class="message-content">
+                        <p>Hello! I am your AI Database Assistant. Connect to a database to start chatting.</p>
+                        <p>Once connected, I will index your schemas and table rows so you can ask me questions like:</p>
+                        <ul>
+                             <li><em>"What tables are in this database?"</em></li>
+                             <li><em>"Show me products priced under 500."</em></li>
+                             <li><em>"Is there any user named 'Sachin' in the users table?"</em></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <form id="chat-input-form" class="chat-input-form">
+                <input type="text" id="chat-input" placeholder="Type a message..." required disabled>
+                <button type="submit" id="btn-chat-send" class="btn btn-primary" disabled>
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
         </div>
     </div>
 
