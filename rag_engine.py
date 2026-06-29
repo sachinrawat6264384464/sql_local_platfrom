@@ -113,7 +113,7 @@ class RAGEngine:
 
     def _get_embedding(self, texts, is_query=False):
         """
-        Calls Gemini Embeddings API. Returns a list of vectors.
+        Calls Gemini Embeddings API with automatic retry and backoff on rate limits.
         """
         if not self.api_configured:
             # Check env variable one more time in case it was set by parent thread
@@ -123,21 +123,34 @@ class RAGEngine:
 
         task_type = "retrieval_query" if is_query else "retrieval_document"
         
-        # genai.embed_content handles both single string and list of strings
-        try:
-            result = genai.embed_content(
-                model=self.embedding_model,
-                content=texts,
-                task_type=task_type
-            )
-            # Response formatting varies depending on input type (single vs list)
-            if isinstance(texts, str):
-                return result['embedding']
-            else:
-                return result['embedding']
-        except Exception as e:
-            logger.error(f"Error generating embeddings from Gemini using {self.embedding_model}: {e}")
-            raise e
+        max_retries = 5
+        backoff_factor = 2
+        initial_delay = 2.0  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                result = genai.embed_content(
+                    model=self.embedding_model,
+                    content=texts,
+                    task_type=task_type
+                )
+                # Response formatting varies depending on input type (single vs list)
+                if isinstance(texts, str):
+                    return result['embedding']
+                else:
+                    return result['embedding']
+            except Exception as e:
+                error_msg = str(e)
+                # Check for rate limit or quota exceeded exceptions (HTTP 429 or status ResourceExhausted)
+                if "429" in error_msg or "Quota exceeded" in error_msg or "ResourceExhausted" in error_msg:
+                    delay = initial_delay * (backoff_factor ** attempt)
+                    logger.warning(f"Rate limit hit during embedding. Retrying in {delay:.1f} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"Error generating embeddings from Gemini using {self.embedding_model}: {e}")
+                    raise e
+        
+        raise Exception("Max retries exceeded for generating embeddings due to Gemini API rate limits.")
 
     def ingest_table_data(self, conn, table_name):
         """
@@ -212,15 +225,15 @@ class RAGEngine:
                 logger.warning(f"Error deleting old records for {table_name} (might not exist yet): {delete_err}")
 
             # 6. Generate embeddings and save to Chroma (batch to avoid exceeding API limits)
-            batch_size = 50
+            batch_size = 200
             for i in range(0, len(chunks), batch_size):
                 batch_chunks = chunks[i:i + batch_size]
                 batch_metadatas = metadatas[i:i + batch_size]
                 batch_ids = ids[i:i + batch_size]
-
+ 
                 # Fetch embeddings from Gemini API
                 batch_embeddings = self._get_embedding(batch_chunks)
-
+ 
                 # Add to ChromaDB
                 self.collection.add(
                     ids=batch_ids,
@@ -228,6 +241,8 @@ class RAGEngine:
                     documents=batch_chunks,
                     metadatas=batch_metadatas
                 )
+                # Small pacing delay to respect free-tier API rate limits
+                time.sleep(0.5)
             
             logger.info(f"Successfully indexed table {table_name} ({len(chunks)} chunks).")
 

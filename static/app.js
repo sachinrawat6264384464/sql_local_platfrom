@@ -169,13 +169,161 @@ function setupEventListeners() {
     const widgetToggle = document.getElementById('chat-widget-toggle');
     const widgetWindow = document.getElementById('chat-widget-window');
     const widgetClose = document.getElementById('btn-chat-close');
+    const chatContainer = document.querySelector('.floating-chat-container');
 
-    if (widgetToggle && widgetWindow) {
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initialBottom = 0;
+    let initialRight = 0;
+    let initialRect = null;
+    let hasMoved = false;
+
+    if (widgetToggle && widgetWindow && chatContainer) {
+        // Dragging event handlers for mouse on toggle button
+        widgetToggle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Only left click drag
+            startDrag(e, e.clientX, e.clientY);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            e.preventDefault();
+        });
+
+        // Dragging event handlers for touch devices on toggle button
+        widgetToggle.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                startDrag(e, e.touches[0].clientX, e.touches[0].clientY);
+                document.addEventListener('touchmove', onTouchMove);
+                document.addEventListener('touchend', onTouchEnd);
+            }
+        });
+
+        // Dragging event handlers for mouse on chat header bar (when chat window is open)
+        const chatHeader = widgetWindow.querySelector('.chat-header-bar');
+        if (chatHeader) {
+            chatHeader.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return; // Only left click drag
+                // Don't drag if user is clicking a button or setting inside header
+                if (e.target.closest('button') || e.target.closest('input')) {
+                    return;
+                }
+                startDrag(e, e.clientX, e.clientY);
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                e.preventDefault();
+            });
+
+            chatHeader.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    if (e.target.closest('button') || e.target.closest('input')) {
+                        return;
+                    }
+                    startDrag(e, e.touches[0].clientX, e.touches[0].clientY);
+                    document.addEventListener('touchmove', onTouchMove);
+                    document.addEventListener('touchend', onTouchEnd);
+                }
+            });
+        }
+
+        function startDrag(e, clientX, clientY) {
+            isDragging = true;
+            hasMoved = false;
+            
+            initialRect = chatContainer.getBoundingClientRect();
+            // Calculate starting bottom and right coordinates relative to the viewport
+            initialBottom = window.innerHeight - initialRect.bottom;
+            initialRight = window.innerWidth - initialRect.right;
+            
+            dragStartX = clientX;
+            dragStartY = clientY;
+        }
+
+        function onMouseMove(e) {
+            dragMove(e.clientX, e.clientY);
+        }
+
+        function onTouchMove(e) {
+            if (e.touches.length === 1) {
+                dragMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }
+
+        function dragMove(clientX, clientY) {
+            if (!isDragging || !initialRect) return;
+            
+            const deltaX = clientX - dragStartX;
+            const deltaY = clientY - dragStartY;
+            
+            if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+                hasMoved = true;
+            }
+            
+            // Calculate starting state and prospective position
+            let newLeft = initialRect.left + deltaX;
+            let newBottom = initialBottom - deltaY;
+            
+            // Viewport constraints
+            const chatWidth = 380; // Width of the open chat window
+            const minLeft = 10;
+            const minBottom = 10;
+            const maxBottom = window.innerHeight - initialRect.height - 10;
+            
+            // Constrain bottom
+            if (newBottom < minBottom) newBottom = minBottom;
+            if (newBottom > maxBottom) newBottom = maxBottom;
+            
+            // Determine if the widget resides on the left half or right half of the screen
+            const isLeftHalf = newLeft < (window.innerWidth / 2);
+            
+            chatContainer.style.top = 'auto';
+            chatContainer.style.bottom = `${newBottom}px`;
+            
+            if (isLeftHalf) {
+                // Left half of screen: Anchor to left, grow to the right
+                const maxLeft = window.innerWidth - chatWidth - 10;
+                if (newLeft < minLeft) newLeft = minLeft;
+                if (newLeft > maxLeft) newLeft = maxLeft;
+                
+                chatContainer.style.right = 'auto';
+                chatContainer.style.left = `${newLeft}px`;
+                chatContainer.style.alignItems = 'flex-start';
+            } else {
+                // Right half of screen: Anchor to right, grow to the left
+                let newRight = window.innerWidth - (newLeft + initialRect.width);
+                const minRight = 10;
+                const maxRight = window.innerWidth - chatWidth - 10;
+                
+                if (newRight < minRight) newRight = minRight;
+                if (newRight > maxRight) newRight = maxRight;
+                
+                chatContainer.style.left = 'auto';
+                chatContainer.style.right = `${newRight}px`;
+                chatContainer.style.alignItems = 'flex-end';
+            }
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        function onTouchEnd() {
+            isDragging = false;
+            document.removeEventListener('touchmove', onTouchMove);
+            document.removeEventListener('touchend', onTouchEnd);
+        }
+
+        // Click handler to open/close chat drawer
         widgetToggle.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (hasMoved) {
+                // If it was dragged, don't open the chat window
+                return;
+            }
+            
             widgetWindow.classList.toggle('active');
             if (widgetWindow.classList.contains('active')) {
-                // Scroll message container to bottom on open
                 const container = document.getElementById('chat-messages');
                 if (container) container.scrollTop = container.scrollHeight;
             }
@@ -1830,6 +1978,7 @@ function closeModal(modalId) {
    FEATURE 6: AI CHATBOT & RAG ENGINE
    ========================================== */
 let ragPollingInterval = null;
+let lastRagStatus = null;
 
 function startRAGStatusPolling() {
     if (ragPollingInterval) clearInterval(ragPollingInterval);
@@ -1846,6 +1995,7 @@ function stopRAGStatusPolling() {
         clearInterval(ragPollingInterval);
         ragPollingInterval = null;
     }
+    lastRagStatus = null;
     updateRAGStatusUI('idle', 'Not Connected', false);
 }
 
@@ -1865,22 +2015,36 @@ async function checkRAGStatus() {
                 statusText = 'Database Synced';
             } else if (data.status === 'failed') {
                 statusText = 'Sync Failed';
+                // Show toast notification ONCE when transition happens to failed
+                if (lastRagStatus !== 'failed' && data.error) {
+                    showToast(`Sync Failed: ${data.error}`, 'error');
+                }
             }
             
-            updateRAGStatusUI(data.status, statusText, isConfigured);
+            lastRagStatus = data.status;
+            updateRAGStatusUI(data.status, statusText, isConfigured, data.error);
         }
     } catch (err) {
         console.error('Error fetching RAG status:', err);
     }
 }
 
-function updateRAGStatusUI(status, text, isConfigured) {
+function updateRAGStatusUI(status, text, isConfigured, errorMsg = '') {
     const dot = document.getElementById('rag-status-dot');
     const textEl = document.getElementById('rag-status-text');
     
     if (!dot || !textEl) return;
     
     textEl.textContent = `${text} ${isConfigured ? '' : '(No API Key)'}`;
+    
+    // Add tooltip showing the error details on hover
+    if (status === 'failed' && errorMsg) {
+        textEl.title = `Error details: ${errorMsg}`;
+        dot.title = `Error details: ${errorMsg}`;
+    } else {
+        textEl.title = '';
+        dot.title = '';
+    }
     
     dot.className = 'status-dot';
     if (status === 'indexing') {

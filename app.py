@@ -408,6 +408,25 @@ def chat():
         except Exception as query_err:
             print(f"Error querying database list: {query_err}")
     
+    # Diagnostic logging to status_log.txt
+    try:
+        import rag_engine as re_module
+        with open('status_log.txt', 'w', encoding='utf-8') as sf:
+            sf.write(f"Active DB: {active_db}\n")
+            sf.write(f"RAG Status: {re_module.indexing_status}\n")
+            sf.write(f"RAG Error: {re_module.indexing_error}\n")
+            sf.write(f"API Configured: {rag_engine.api_configured}\n")
+            if rag_engine.collection:
+                sf.write(f"Chroma Count: {rag_engine.collection.count()}\n")
+                try:
+                    sample = rag_engine.collection.get(limit=10)
+                    sf.write(f"Chroma Sample Metadatas: {sample['metadatas']}\n")
+                except Exception as get_err:
+                    sf.write(f"Chroma Get Error: {get_err}\n")
+            else:
+                sf.write("Chroma Collection: None\n")
+    except Exception as sf_err:
+        print(f"Error writing status log: {sf_err}")
 
     # Generate RAG response
     response_text = rag_engine.get_chat_response(message, active_db_name=active_db, all_databases=all_dbs)
