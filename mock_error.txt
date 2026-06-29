@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "D:\sql_pro\app.py", line 552, in ai_mock_data
+    insert_sql = rag_engine.generate_mock_data(table_name, columns_info)
+  File "D:\sql_pro\rag_engine.py", line 448, in generate_mock_data
+    raise e
+  File "D:\sql_pro\rag_engine.py", line 445, in generate_mock_data
+    return clean_sql_code(response.text)
+                          ^^^^^^^^^^^^^
+  File "C:\Users\Dell 5490T\AppData\Roaming\Python\Python314\site-packages\google\generativeai\types\generation_types.py", line 488, in text
+    raise ValueError(
+        msg + " Meaning that the model was reciting from copyrighted material."
+    )
+ValueError: Invalid operation: The `response.text` quick accessor requires the response to contain a valid `Part`, but none were returned. The candidate's [finish_reason](https://ai.google.dev/api/generate-content#finishreason) is 4. Meaning that the model was reciting from copyrighted material.

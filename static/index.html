@@ -136,11 +136,24 @@
                             <button id="btn-clear" class="btn btn-secondary">
                                 <i class="fa-solid fa-trash-can"></i> Clear
                             </button>
+                            <button id="btn-ai-optimize" class="btn btn-secondary" title="Optimize with AI" disabled>
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> AI Optimize
+                            </button>
                             <button id="btn-run" class="btn btn-primary" disabled>
                                 <i class="fa-solid fa-play"></i> Run Query <span class="kbd-shortcut">Ctrl+Enter</span>
                             </button>
                         </div>
                     </div>
+                    
+                    <!-- NL2SQL Input Bar -->
+                    <div class="nl2sql-bar">
+                        <i class="fa-solid fa-wand-magic-sparkles nl2sql-icon"></i>
+                        <input type="text" id="nl2sql-input" placeholder="Apne database se jo chahiye simple language me likhein... (e.g. course table me kya he)" disabled>
+                        <button id="btn-nl2sql-run" class="btn btn-secondary" title="Convert to SQL & Run" disabled>
+                            <i class="fa-solid fa-bolt"></i> Generate & Run
+                        </button>
+                    </div>
+
                     <div class="editor-container">
                         <!-- Line numbers column -->
                         <div class="line-numbers" id="editor-line-numbers"><span>1</span></div>
@@ -288,6 +301,63 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-cancel-insert-row">Cancel</button>
                 <button id="btn-submit-insert-row" class="btn btn-primary">Insert Record</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI QUERY OPTIMIZATION REPORT MODAL -->
+    <div id="modal-ai-optimize" class="modal-overlay">
+        <div class="modal-card modal-card-lg" style="max-width: 900px; width: 90%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Query Optimizer</h3>
+                <button class="btn-close-modal" id="btn-close-ai-optimize">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <div>
+                            <h4 style="margin-bottom: 8px; color: var(--text-secondary);"><i class="fa-solid fa-code"></i> Original Query</h4>
+                            <pre id="opt-original-sql" style="background: rgba(0,0,0,0.25); padding: 10px; border-radius: 6px; font-family: 'Fira Code', monospace; font-size: 13px; color: #ff6b6b; white-space: pre-wrap; overflow-x: auto; max-height: 160px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);"></pre>
+                        </div>
+                        <div>
+                            <h4 style="margin-bottom: 8px; color: var(--text-secondary);"><i class="fa-solid fa-rocket"></i> Optimized Query</h4>
+                            <pre id="opt-optimized-sql" style="background: rgba(0,0,0,0.25); padding: 10px; border-radius: 6px; font-family: 'Fira Code', monospace; font-size: 13px; color: #51cf66; white-space: pre-wrap; overflow-x: auto; max-height: 160px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);"></pre>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <div>
+                            <h4 style="margin-bottom: 8px; color: var(--text-secondary);"><i class="fa-solid fa-magnifying-glass-chart"></i> Analysis & Suggestions</h4>
+                            <div id="opt-explanation-content" style="background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; font-size: 13px; color: var(--text-primary); line-height: 1.5; border: 1px solid rgba(255,255,255,0.03); max-height: 240px; overflow-y: auto;">
+                                <!-- AI markdown analysis -->
+                            </div>
+                        </div>
+                        <div id="opt-indexes-section" style="display: none;">
+                            <h4 style="margin-bottom: 8px; color: var(--text-secondary);"><i class="fa-solid fa-bolt-lightning"></i> Suggested Indexes</h4>
+                            <pre id="opt-suggested-indexes" style="background: rgba(0,0,0,0.25); padding: 10px; border-radius: 6px; font-family: 'Fira Code', monospace; font-size: 12px; color: #fcc419; white-space: pre-wrap; max-height: 100px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-ai-optimize">Cancel</button>
+                <button id="btn-apply-optimized-query" class="btn btn-primary"><i class="fa-solid fa-check"></i> Apply Optimized Query</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION MODAL -->
+    <div id="modal-confirm" class="modal-overlay">
+        <div class="modal-card" style="max-width: 420px; width: 90%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-blue);"></i> Confirm Action</h3>
+                <button class="btn-close-modal" id="btn-close-confirm">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 24px;">
+                <p id="confirm-message-text" style="color: var(--text-primary); line-height: 1.5; font-size: 14px; margin: 0;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-confirm">Cancel</button>
+                <button id="btn-submit-confirm" class="btn btn-primary">Confirm</button>
             </div>
         </div>
     </div>

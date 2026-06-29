@@ -383,5 +383,153 @@ Instructions:
             logger.error(f"Error generating chat response: {e}")
             return f"Error generating response: {str(e)}"
 
+    def generate_nl2sql(self, user_prompt, active_db="postgres", table_schemas=""):
+        """
+        Translates a natural language question into a raw, executable SQL query.
+        """
+        if not self.api_configured:
+            raise ValueError("Gemini API Key is not configured.")
+
+        system_instruction = f"""You are a professional PostgreSQL developer. 
+Your task is to translate the user's natural language request into a single valid, optimized SQL query for the active database '{active_db}'.
+
+Here is the database schema context (tables, columns, types):
+{table_schemas}
+
+Instructions:
+1. ONLY return the raw SQL code. Do NOT enclose it in markdown blocks (like ```sql). Do NOT write any explanations, greetings, or notes.
+2. Ensure table names and column names match the schema context exactly.
+3. If table names are case-sensitive or contain special characters, wrap them in double quotes (e.g. "student_batch").
+4. Keep the query simple and direct.
+"""
+
+        try:
+            model = genai.GenerativeModel(
+                self.generation_model,
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(user_prompt)
+            return clean_sql_code(response.text)
+        except Exception as e:
+            logger.error(f"Error in generate_nl2sql: {e}")
+            raise e
+
+    def generate_mock_data(self, table_name, columns_info):
+        """
+        Reads columns_info and generates raw SQL INSERT queries for 20 mock rows.
+        """
+        if not self.api_configured:
+            raise ValueError("Gemini API Key is not configured.")
+
+        columns_desc = "\n".join([f"- {col['name']} ({col['type']}, nullable={col['nullable']})" for col in columns_info])
+
+        system_instruction = f"""You are a PostgreSQL mock data generator.
+Your task is to generate 20 rows of realistic, completely fictional and randomized mock data for the table "{table_name}".
+
+Here are the table columns and data types:
+{columns_desc}
+
+Instructions:
+1. Output ONLY raw, valid SQL INSERT statements. Each insert should target the "{table_name}" table.
+2. Use bulk insert or individual INSERT statements. Prefer a single bulk insert `INSERT INTO "{table_name}" (...) VALUES ...;` to avoid database roundtrips.
+3. Ensure values are completely fictional and randomized (e.g. use @example.com or @test.org, fake names) to prevent copyright/recitation triggers.
+4. Do NOT output any markdown tags (like ```sql), code wrappers, explanations, or introductory text. Just the SQL statements.
+"""
+
+        try:
+            model = genai.GenerativeModel(
+                self.generation_model,
+                system_instruction=system_instruction
+            )
+            response = model.generate_content("Generate 20 rows of mock insert statements.")
+            return clean_sql_code(response.text)
+        except Exception as e:
+            logger.error(f"Error in generate_mock_data: {e}")
+            raise e
+
+    def optimize_query(self, sql_query, active_db="postgres", table_schemas=""):
+        """
+        Analyzes a SQL query and suggests improvements, optimized SQL, and index creation SQL.
+        """
+        if not self.api_configured:
+            raise ValueError("Gemini API Key is not configured.")
+
+        prompt = f"""Analyze this SQL query for performance bottlenecks on a PostgreSQL database '{active_db}':
+
+QUERY:
+{sql_query}
+
+DATABASE SCHEMA CONTEXT:
+{table_schemas}
+
+Provide your optimization response strictly in a JSON format with the following keys:
+- "explanation": A concise markdown explanation of the performance bottlenecks (e.g. full table scan, missing indexes, bad joins) and how your optimization fixes it.
+- "optimized_sql": The optimized SQL query statement.
+- "suggested_indexes_sql": SQL commands to create recommended indexes to speed up this query, or empty string if no indexes are recommended.
+
+Only output valid JSON. Do not include markdown code block wrappers (like ```json) in your final response.
+"""
+
+        try:
+            model = genai.GenerativeModel(self.generation_model)
+            response = model.generate_content(prompt)
+            
+            raw_text = clean_json_code(response.text)
+            
+            import json
+            try:
+                data = json.loads(raw_text)
+                if "optimized_sql" in data:
+                    data["optimized_sql"] = clean_sql_code(data["optimized_sql"])
+                if "suggested_indexes_sql" in data:
+                    data["suggested_indexes_sql"] = clean_sql_code(data["suggested_indexes_sql"])
+            except Exception as json_err:
+                logger.warning(f"Failed to parse JSON optimization response, trying simple extract: {json_err}")
+                data = {
+                    "explanation": f"Failed to parse JSON response. Raw text:\n{raw_text}",
+                    "optimized_sql": sql_query,
+                    "suggested_indexes_sql": ""
+                }
+            return data
+        except Exception as e:
+            logger.error(f"Error in optimize_query: {e}")
+            raise e
+
 # Global engine instance
 rag_engine = RAGEngine()
+
+# ==========================================
+# MODULE LEVEL HELPERS (PROPERLY SCOPED)
+# ==========================================
+
+def clean_sql_code(text):
+    import re
+    if not text:
+        return ""
+    # Match ```sql ... ``` or ``` ... ```
+    match = re.search(r'```(?:sql)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # If no code block, filter lines to keep only sql instructions
+    lines = text.split('\n')
+    sql_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        upper_strip = stripped.upper()
+        # Filter out markdown formatting or chatbot descriptions
+        if upper_strip.startswith(('INSERT', 'VALUES', 'SELECT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', '--', '(', 'WITH')) or stripped.endswith(';'):
+            sql_lines.append(stripped)
+    return '\n'.join(sql_lines).strip()
+
+def clean_json_code(text):
+    import re
+    if not text:
+        return ""
+    # Match ```json ... ``` or ``` ... ```
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return text.strip()

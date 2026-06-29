@@ -165,6 +165,42 @@ function setupEventListeners() {
     const saveKeyBtn = document.getElementById('btn-save-api-key');
     if (saveKeyBtn) saveKeyBtn.addEventListener('click', handleSaveAPIKey);
 
+    // AI Features Event Listeners
+    const btnNl2sqlRun = document.getElementById('btn-nl2sql-run');
+    const nl2sqlInput = document.getElementById('nl2sql-input');
+    if (btnNl2sqlRun && nl2sqlInput) {
+        btnNl2sqlRun.addEventListener('click', handleNL2SQL);
+        nl2sqlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleNL2SQL();
+            }
+        });
+    }
+
+    const btnAiOptimize = document.getElementById('btn-ai-optimize');
+    if (btnAiOptimize) btnAiOptimize.addEventListener('click', handleAIQueryOptimize);
+
+    // Optimize Modal Actions
+    const btnCloseAiOpt = document.getElementById('btn-close-ai-optimize');
+    const btnCancelAiOpt = document.getElementById('btn-cancel-ai-optimize');
+    if (btnCloseAiOpt) btnCloseAiOpt.addEventListener('click', () => closeModal('modal-ai-optimize'));
+    if (btnCancelAiOpt) btnCancelAiOpt.addEventListener('click', () => closeModal('modal-ai-optimize'));
+
+    const btnApplyOptimized = document.getElementById('btn-apply-optimized-query');
+    if (btnApplyOptimized) {
+        btnApplyOptimized.addEventListener('click', () => {
+            const modal = document.getElementById('modal-ai-optimize');
+            const optimizedSql = modal.dataset.optimizedSql;
+            if (optimizedSql) {
+                queryEditor.value = optimizedSql;
+                updateLineNumbers();
+                closeModal('modal-ai-optimize');
+                showToast('Optimized query applied to editor!', 'success');
+            }
+        });
+    }
+
     // Floating toggle button & close button
     const widgetToggle = document.getElementById('chat-widget-toggle');
     const widgetWindow = document.getElementById('chat-widget-window');
@@ -469,6 +505,14 @@ function setUIState(connected) {
         btnBookmark.disabled = false;
         btnCreateTableModal.disabled = false;
         
+        // Enable AI Elements
+        const nl2sqlInput = document.getElementById('nl2sql-input');
+        const btnNl2sqlRun = document.getElementById('btn-nl2sql-run');
+        const btnAiOptimize = document.getElementById('btn-ai-optimize');
+        if (nl2sqlInput) nl2sqlInput.disabled = false;
+        if (btnNl2sqlRun) btnNl2sqlRun.disabled = false;
+        if (btnAiOptimize) btnAiOptimize.disabled = false;
+        
         // Chatbot Controls
         const widgetToggle = document.getElementById('chat-widget-toggle');
         if (widgetToggle) widgetToggle.disabled = false;
@@ -495,6 +539,14 @@ function setUIState(connected) {
         tabBtnChart.disabled = true;
         btnBookmark.disabled = true;
         btnCreateTableModal.disabled = true;
+        
+        // Disable AI Elements
+        const nl2sqlInput = document.getElementById('nl2sql-input');
+        const btnNl2sqlRun = document.getElementById('btn-nl2sql-run');
+        const btnAiOptimize = document.getElementById('btn-ai-optimize');
+        if (nl2sqlInput) { nl2sqlInput.disabled = true; nl2sqlInput.value = ''; }
+        if (btnNl2sqlRun) btnNl2sqlRun.disabled = true;
+        if (btnAiOptimize) btnAiOptimize.disabled = true;
         
         // Chatbot Controls
         const widgetToggle = document.getElementById('chat-widget-toggle');
@@ -705,12 +757,24 @@ async function loadTables() {
 
             data.tables.forEach(tableName => {
                 const li = document.createElement('li');
-                li.innerHTML = `<i class="fa-solid fa-table"></i> ${tableName}`;
-                li.title = `Click to load table "${tableName}"`;
-                li.addEventListener('click', () => {
+                li.className = 'table-list-item';
+                li.innerHTML = `
+                    <span class="table-name-wrapper" title="Click to load table '${tableName}'"><i class="fa-solid fa-table"></i> ${tableName}</span>
+                    <button class="btn-table-action btn-generate-mock" title="Generate 20 Mock Rows via AI" data-table="${tableName}">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </button>
+                `;
+                
+                li.querySelector('.table-name-wrapper').addEventListener('click', () => {
                     switchTab('grid');
                     handleTableSelect(tableName);
                 });
+                
+                li.querySelector('.btn-generate-mock').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleGenerateMockData(tableName);
+                });
+                
                 tablesList.appendChild(li);
             });
         } else {
@@ -2201,4 +2265,180 @@ function formatMarkdown(text) {
         }).join('');
         
     return html;
+}
+
+// ==========================================
+// FEATURE 7: AI INTEGRATED DEVELOPER TOOLS
+// ==========================================
+
+// Handle Natural Language to SQL
+async function handleNL2SQL() {
+    const input = document.getElementById('nl2sql-input');
+    const btn = document.getElementById('btn-nl2sql-run');
+    const prompt = input.value.trim();
+    
+    if (!prompt) return;
+    
+    input.disabled = true;
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/ai/nl2sql`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                database: state.database
+            })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            // Set the generated SQL in editor
+            queryEditor.value = data.sql;
+            updateLineNumbers();
+            
+            showToast('SQL generated successfully! Running query...', 'success');
+            // Execute the query
+            btnRun.click();
+        } else {
+            showToast(data.error || 'Failed to translate natural language', 'error');
+        }
+    } catch (err) {
+        showToast('Network error during NL2SQL generation', 'error');
+        console.error(err);
+    } finally {
+        input.disabled = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+// Handle AI Mock Data Generation
+// Helper to show a beautiful custom confirm modal on the page
+function showConfirm(message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('modal-confirm');
+        const textEl = document.getElementById('confirm-message-text');
+        const btnSubmit = document.getElementById('btn-submit-confirm');
+        const btnCancel = document.getElementById('btn-cancel-confirm');
+        const btnClose = document.getElementById('btn-close-confirm');
+        
+        textEl.textContent = message;
+        openModal('modal-confirm');
+        
+        const cleanUp = () => {
+            closeModal('modal-confirm');
+            btnSubmit.removeEventListener('click', onConfirm);
+            btnCancel.removeEventListener('click', onCancel);
+            btnClose.removeEventListener('click', onCancel);
+        };
+        
+        const onConfirm = () => {
+            cleanUp();
+            resolve(true);
+        };
+        
+        const onCancel = () => {
+            cleanUp();
+            resolve(false);
+        };
+        
+        btnSubmit.addEventListener('click', onConfirm);
+        btnCancel.addEventListener('click', onCancel);
+        btnClose.addEventListener('click', onCancel);
+    });
+}
+
+// Handle AI Mock Data Generation
+async function handleGenerateMockData(tableName) {
+    const confirmGen = await showConfirm(`Are you sure you want to generate 20 mock rows via AI for table "${tableName}"? This will only take 1-3 seconds.`);
+    if (!confirmGen) return;
+    
+    showToast(`AI generating 20 mock rows for "${tableName}"...`, 'info');
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/ai/mock-data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                table: tableName,
+                database: state.database
+            })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message, 'success');
+            // Reload the table grid view to show newly added rows if they are currently viewing this table
+            if (state.activeTable === tableName) {
+                handleTableSelect(tableName);
+            }
+        } else {
+            showToast(data.error || 'Failed to generate mock data', 'error');
+        }
+    } catch (err) {
+        showToast('Network error during mock data generation', 'error');
+        console.error(err);
+    }
+}
+
+// Handle AI Query Optimization Analysis
+async function handleAIQueryOptimize() {
+    const currentSql = queryEditor.value.trim();
+    if (!currentSql) {
+        showToast('Please write a SQL query to optimize first.', 'info');
+        return;
+    }
+    
+    const btn = document.getElementById('btn-ai-optimize');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Optimizing...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/ai/optimize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sql: currentSql,
+                database: state.database
+            })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            // Fill optimization modal details
+            document.getElementById('opt-original-sql').textContent = currentSql;
+            document.getElementById('opt-optimized-sql').textContent = data.optimized_sql;
+            
+            const explanationContent = document.getElementById('opt-explanation-content');
+            explanationContent.innerHTML = formatMarkdown(data.explanation);
+            
+            const indexesSection = document.getElementById('opt-indexes-section');
+            const indexesPre = document.getElementById('opt-suggested-indexes');
+            if (data.suggested_indexes_sql && data.suggested_indexes_sql.trim() !== '') {
+                indexesPre.textContent = data.suggested_indexes_sql;
+                indexesSection.style.display = 'block';
+            } else {
+                indexesSection.style.display = 'none';
+            }
+            
+            // Store optimized query in modal dataset for apply button
+            document.getElementById('modal-ai-optimize').dataset.optimizedSql = data.optimized_sql;
+            
+            // Open Modal
+            openModal('modal-ai-optimize');
+        } else {
+            showToast(data.error || 'Failed to optimize query', 'error');
+        }
+    } catch (err) {
+        showToast('Network error during query optimization', 'error');
+        console.error(err);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 }

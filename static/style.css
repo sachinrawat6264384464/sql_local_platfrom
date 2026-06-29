@@ -1628,3 +1628,92 @@ body {
         transform: translateY(0) scale(1);
     }
 }
+
+/* NL2SQL INPUT BAR STYLES */
+.nl2sql-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-card);
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
+}
+
+.nl2sql-icon {
+    color: var(--accent-blue);
+    font-size: 16px;
+    animation: magicPulse 2s infinite alternate;
+}
+
+@keyframes magicPulse {
+    from { transform: scale(1); filter: drop-shadow(0 0 1px var(--accent-blue)); }
+    to { transform: scale(1.15); filter: drop-shadow(0 0 6px var(--accent-blue)); }
+}
+
+#nl2sql-input {
+    flex: 1;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    transition: all 0.25s ease;
+}
+
+#nl2sql-input:focus {
+    border-color: var(--accent-blue);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(51, 154, 240, 0.15);
+}
+
+#nl2sql-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* SIDEBAR MOCK DATA BUTTON */
+.table-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.table-list-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.table-name-wrapper {
+    flex: 1;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 6px 0;
+}
+
+.btn-table-action {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+.table-list-item:hover .btn-table-action {
+    opacity: 1;
+}
+
+.btn-table-action:hover {
+    color: var(--accent-blue);
+    background: rgba(255, 255, 255, 0.08);
+}
+

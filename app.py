@@ -456,6 +456,146 @@ def save_rag_config():
     else:
         return jsonify({'error': 'Failed to configure API key.'}), 400
 
+def get_all_tables_schema_text(conn):
+    try:
+        # If the transaction is aborted, roll back first to keep it clean
+        try:
+            conn.rollback()
+        except:
+            pass
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT table_name 
+                   FROM information_schema.tables 
+                   WHERE table_schema = 'public' 
+                   AND table_type = 'BASE TABLE'
+                   ORDER BY table_name;"""
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+            
+            schema_parts = []
+            for t in tables:
+                cursor.execute(
+                    """SELECT column_name, data_type, is_nullable
+                       FROM information_schema.columns 
+                       WHERE table_name = %s AND table_schema = 'public'
+                       ORDER BY ordinal_position;""",
+                    (t,)
+                )
+                columns = cursor.fetchall()
+                col_descs = [f"{col[0]} ({col[1]}, nullable={col[2]})" for col in columns]
+                schema_parts.append(f"Table: {t}\nColumns: {', '.join(col_descs)}")
+            return "\n\n".join(schema_parts)
+    except Exception as e:
+        print(f"Error getting schema text: {e}")
+        return ""
+
+# POST: Translate natural language prompt to SQL query
+@app.route('/api/ai/nl2sql', methods=['POST'])
+def ai_nl2sql():
+    global active_conn, active_config
+    if not active_conn:
+        return jsonify({'error': 'No active database connection. Please connect first.'}), 401
+    
+    data = request.json or {}
+    prompt = data.get('prompt')
+    if not prompt:
+        return jsonify({'error': 'Prompt is required.'}), 400
+        
+    active_db = active_config.get('database', 'postgres') if active_config else 'postgres'
+    
+    try:
+        schema_text = get_all_tables_schema_text(active_conn)
+        sql = rag_engine.generate_nl2sql(prompt, active_db=active_db, table_schemas=schema_text)
+        return jsonify({'sql': sql})
+    except Exception as e:
+        import traceback
+        try:
+            with open('nl2sql_error.txt', 'w', encoding='utf-8') as ef:
+                ef.write(traceback.format_exc())
+        except Exception as f_err:
+            print(f"Error writing to nl2sql_error.txt: {f_err}")
+        return jsonify({'error': f"Failed to generate SQL: {str(e)}"}), 500
+
+# POST: Generate and insert 100 rows of mock data
+@app.route('/api/ai/mock-data', methods=['POST'])
+def ai_mock_data():
+    global active_conn
+    if not active_conn:
+        return jsonify({'error': 'No active database connection.'}), 401
+        
+    data = request.json or {}
+    table_name = data.get('table')
+    if not table_name:
+        return jsonify({'error': 'Table name is required.'}), 400
+        
+    try:
+        try:
+            active_conn.rollback()
+        except:
+            pass
+        with active_conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT column_name, data_type, is_nullable
+                   FROM information_schema.columns 
+                   WHERE table_name = %s AND table_schema = 'public'
+                   ORDER BY ordinal_position;""",
+                (table_name,)
+            )
+            columns = cursor.fetchall()
+            if not columns:
+                return jsonify({'error': f"Table '{table_name}' does not exist or has no columns."}), 404
+                
+            columns_info = [{'name': col[0], 'type': col[1], 'nullable': col[2]} for col in columns]
+            
+            # Generate the mock data insert statement
+            insert_sql = rag_engine.generate_mock_data(table_name, columns_info)
+            
+            # Execute the generated inserts
+            cursor.execute(insert_sql)
+            active_conn.commit()
+            
+            return jsonify({'success': True, 'message': f"Successfully generated and inserted 20 mock rows into '{table_name}'."})
+    except Exception as e:
+        import traceback
+        try:
+            with open('mock_error.txt', 'w', encoding='utf-8') as ef:
+                ef.write(traceback.format_exc())
+        except Exception as f_err:
+            print(f"Error writing to mock_error.txt: {f_err}")
+        try:
+            active_conn.rollback()
+        except:
+            pass
+        return jsonify({'error': f"Failed to generate mock data: {str(e)}"}), 500
+
+# POST: Optimize a SQL query
+@app.route('/api/ai/optimize', methods=['POST'])
+def ai_optimize():
+    global active_conn, active_config
+    if not active_conn:
+        return jsonify({'error': 'No active database connection.'}), 401
+        
+    data = request.json or {}
+    sql_query = data.get('sql')
+    if not sql_query:
+        return jsonify({'error': 'SQL query is required.'}), 400
+        
+    active_db = active_config.get('database', 'postgres') if active_config else 'postgres'
+    
+    try:
+        schema_text = get_all_tables_schema_text(active_conn)
+        result = rag_engine.optimize_query(sql_query, active_db=active_db, table_schemas=schema_text)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        try:
+            with open('optimize_error.txt', 'w', encoding='utf-8') as ef:
+                ef.write(traceback.format_exc())
+        except Exception as f_err:
+            print(f"Error writing to optimize_error.txt: {f_err}")
+        return jsonify({'error': f"Failed to optimize query: {str(e)}"}), 500
+
 if __name__ == '__main__':
     # Ensure static directory exists
     os.makedirs(static_folder, exist_ok=True)
